@@ -163,6 +163,9 @@ extern "C" {
 #define BAA_SERVICE					0x1851
 #define BAA_SERVICE_UUID	"00001851-0000-1000-8000-00805f9b34fb"
 
+#define ASHA_SERVICE					0xFDF0
+#define ASHA_PROFILE_UUID	"0000FDF0-0000-1000-8000-00805f9b34fb"
+
 #define PAC_CONTEXT					0x2bcd
 #define PAC_SUPPORTED_CONTEXT				0x2bce
 
@@ -187,6 +190,13 @@ extern "C" {
 #define VOCS_CP_CHRC_UUID			0x2B82
 #define VOCS_AUDIO_OP_DESC_CHAR_UUID		0x2B83
 
+#define	AICS_INPUT_STATE_CHAR_UUID		0x2B77
+#define	AICS_GAIN_SETTING_PROP_CHAR_UUID	0x2B78
+#define	AICS_AUDIO_INPUT_TYPE_CHAR_UUID		0x2B79
+#define	AICS_INPUT_STATUS_CHAR_UUID		0X2B7A
+#define	AICS_AUDIO_INPUT_CP_CHRC_UUID		0X2B7B
+#define	AICS_INPUT_DESCR_CHAR_UUID		0X2B7C
+
 #define GMCS_UUID                               0x1849
 #define MEDIA_PLAYER_NAME_CHRC_UUID             0x2b93
 #define MEDIA_TRACK_CHNGD_CHRC_UUID             0x2b96
@@ -209,6 +219,32 @@ extern "C" {
 #define CS_LOCK						0x2B86
 #define CS_RANK						0x2B87
 
+
+/* Microphone Control Service(MICS) */
+#define MICS_UUID					0x184D
+#define MUTE_CHRC_UUID					0x2BC3
+
+/* Call Control Service(TBS/CCS) */
+#define TBS_UUID                                0x184B
+#define GTBS_UUID                               0x184C
+
+#define BEARER_PROVIDER_NAME_CHRC_UUID          0x2bb3
+#define BEARER_UCI_CHRC_UUID                    0x2bb4
+#define BEARER_TECH_CHRC_UUID                   0x2bb5
+#define BEARER_URI_SCHEME_CHRC_UUID             0x2bb6
+#define BEARER_SIGNAL_STR_CHRC_UUID             0x2bb7
+#define BEARER_SIGNAL_INTRVL_CHRC_UUID          0x2bb8
+#define CURR_CALL_LIST_CHRC_UUID                0x2bb9
+#define BEARER_CCID_CHRC_UUID                   0x2bba
+#define CALL_STATUS_FLAG_CHRC_UUID              0x2bbb
+#define INCOM_CALL_TARGET_URI_CHRC_UUID         0x2bbc
+#define CALL_STATE_CHRC_UUID                    0x2bbd
+#define CALL_CTRL_POINT_CHRC_UUID               0x2bbe
+#define CALL_CTRL_POINT_OPT_OPCODE_CHRC_UUID    0x2bbf
+#define TERMINATION_REASON_CHRC_UUID            0x2bc0
+#define INCOMING_CALL_CHRC_UUID                 0x2bc1
+#define CALL_FRIENDLY_NAME_CHRC_UUID            0x2bc2
+
 typedef struct {
 	enum {
 		BT_UUID_UNSPEC = 0,
@@ -230,6 +266,7 @@ int bt_uuid32_create(bt_uuid_t *btuuid, uint32_t value);
 int bt_uuid128_create(bt_uuid_t *btuuid, uint128_t value);
 
 int bt_uuid_cmp(const bt_uuid_t *uuid1, const bt_uuid_t *uuid2);
+int bt_uuid16_cmp(const bt_uuid_t *uuid1, uint16_t uuid2);
 void bt_uuid_to_uuid128(const bt_uuid_t *src, bt_uuid_t *dst);
 
 #define MAX_LEN_UUID_STR 37

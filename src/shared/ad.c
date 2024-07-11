@@ -48,7 +48,7 @@ struct bt_ad *bt_ad_new(void)
 	struct bt_ad *ad;
 
 	ad = new0(struct bt_ad, 1);
-	ad->max_len = BT_AD_MAX_DATA_LEN;
+	ad->max_len = BT_EA_MAX_DATA_LEN;
 	ad->service_uuids = queue_new();
 	ad->manufacturer_data = queue_new();
 	ad->solicit_uuids = queue_new();
@@ -520,9 +520,14 @@ static size_t data_length(struct queue *queue)
 	return length;
 }
 
-static size_t calculate_length(struct bt_ad *ad)
+size_t bt_ad_length(struct bt_ad *ad)
 {
-	size_t length = 0;
+	size_t length;
+
+	if (!ad)
+		return 0;
+
+	length = 0;
 
 	length += uuid_list_length(ad->service_uuids);
 
@@ -698,7 +703,7 @@ uint8_t *bt_ad_generate(struct bt_ad *ad, size_t *length)
 	if (!ad)
 		return NULL;
 
-	*length = calculate_length(ad);
+	*length = bt_ad_length(ad);
 
 	if (*length > ad->max_len)
 		return NULL;
@@ -1324,36 +1329,110 @@ struct bt_ad_pattern *bt_ad_pattern_new(uint8_t type, size_t offset, size_t len,
 	return pattern;
 }
 
-static void pattern_ad_data_match(void *data, void *user_data)
+static bool match_manufacturer(const void *data, const void *user_data)
 {
-	struct bt_ad_data *ad_data = data;
-	struct pattern_match_info *info = user_data;
-	struct bt_ad_pattern *pattern;
+	const struct bt_ad_manufacturer_data *manufacturer_data = data;
+	const struct pattern_match_info *info = user_data;
+	const struct bt_ad_pattern *pattern;
+	uint8_t all_data[BT_AD_MAX_DATA_LEN];
 
-	if (!ad_data || !info)
-		return;
+	if (!manufacturer_data || !info)
+		return false;
 
 	if (info->matched_pattern)
-		return;
+		return false;
+
+	pattern = info->current_pattern;
+
+	if (!pattern || pattern->type != BT_AD_MANUFACTURER_DATA)
+		return false;
+
+	/* Take the manufacturer ID into account */
+	if (manufacturer_data->len + 2 < pattern->offset + pattern->len)
+		return false;
+
+	memcpy(&all_data[0], &manufacturer_data->manufacturer_id, 2);
+	memcpy(&all_data[2], manufacturer_data->data, manufacturer_data->len);
+
+	if (!memcmp(all_data + pattern->offset, pattern->data,
+							pattern->len)) {
+		return true;
+	}
+
+	return false;
+}
+
+static bool match_service(const void *data, const void *user_data)
+{
+	const struct bt_ad_service_data *service_data = data;
+	const struct pattern_match_info *info = user_data;
+	const struct bt_ad_pattern *pattern;
+
+	if (!service_data || !info)
+		return false;
+
+	if (info->matched_pattern)
+		return false;
+
+	pattern = info->current_pattern;
+
+	if (!pattern)
+		return false;
+
+	switch (pattern->type) {
+	case BT_AD_SERVICE_DATA16:
+	case BT_AD_SERVICE_DATA32:
+	case BT_AD_SERVICE_DATA128:
+		break;
+	default:
+		return false;
+	}
+
+	if (service_data->len < pattern->offset + pattern->len)
+		return false;
+
+	if (!memcmp(service_data->data + pattern->offset, pattern->data,
+							pattern->len)) {
+		return true;
+	}
+
+	return false;
+}
+
+static bool match_ad_data(const void *data, const void *user_data)
+{
+	const struct bt_ad_data *ad_data = data;
+	const struct pattern_match_info *info = user_data;
+	const struct bt_ad_pattern *pattern;
+
+	if (!ad_data || !info)
+		return false;
+
+	if (info->matched_pattern)
+		return false;
 
 	pattern = info->current_pattern;
 
 	if (!pattern || ad_data->type != pattern->type)
-		return;
+		return false;
 
 	if (ad_data->len < pattern->offset + pattern->len)
-		return;
+		return false;
 
 	if (!memcmp(ad_data->data + pattern->offset, pattern->data,
 								pattern->len)) {
-		info->matched_pattern = pattern;
+		return true;
 	}
+
+	return false;
 }
 
 static void pattern_match(void *data, void *user_data)
 {
 	struct bt_ad_pattern *pattern = data;
 	struct pattern_match_info *info = user_data;
+	struct bt_ad *ad;
+	void *matched = NULL;
 
 	if (!pattern || !info)
 		return;
@@ -1362,8 +1441,29 @@ static void pattern_match(void *data, void *user_data)
 		return;
 
 	info->current_pattern = pattern;
+	ad = info->ad;
 
-	bt_ad_foreach_data(info->ad, pattern_ad_data_match, info);
+	if (!ad)
+		return;
+
+	switch (pattern->type) {
+	case BT_AD_MANUFACTURER_DATA:
+		matched = queue_find(ad->manufacturer_data, match_manufacturer,
+				user_data);
+		break;
+	case BT_AD_SERVICE_DATA16:
+	case BT_AD_SERVICE_DATA32:
+	case BT_AD_SERVICE_DATA128:
+		matched = queue_find(ad->service_data, match_service,
+				user_data);
+		break;
+	default:
+		matched = queue_find(ad->data, match_ad_data, user_data);
+		break;
+	}
+
+	if (matched)
+		info->matched_pattern = info->current_pattern;
 }
 
 struct bt_ad_pattern *bt_ad_pattern_match(struct bt_ad *ad,

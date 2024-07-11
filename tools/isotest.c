@@ -46,9 +46,12 @@
 #define NSEC_USEC(_t) (_t / 1000L)
 #define SEC_USEC(_t)  (_t  * 1000000L)
 #define TS_USEC(_ts)  (SEC_USEC((_ts)->tv_sec) + NSEC_USEC((_ts)->tv_nsec))
+#define ROUND_CLOSEST(_x, _y) (((_x) + (_y / 2)) / (_y))
 
 #define DEFAULT_BIG_ID 0x01
 #define DEFAULT_BIS_ID 0x01
+
+#define MAX_DATA_SIZE 0x40000000
 
 /* Test modes */
 enum {
@@ -642,7 +645,7 @@ static void dump_mode(int fd, int sk, char *peer)
 	}
 
 	syslog(LOG_INFO, "Receiving ...");
-	while ((len = read(sk, buf, data_size)) > 0) {
+	while ((len = read(sk, buf, data_size)) >= 0) {
 		if (fd >= 0) {
 			len = write(fd, buf, len);
 			if (len < 0) {
@@ -680,7 +683,7 @@ static void recv_mode(int fd, int sk, char *peer)
 			int r;
 
 			r = recv(sk, buf, data_size, 0);
-			if (r <= 0) {
+			if (r < 0) {
 				if (r < 0)
 					syslog(LOG_ERR, "Read failed: %s (%d)",
 							strerror(errno), errno);
@@ -720,7 +723,7 @@ static int open_file(const char *filename)
 	syslog(LOG_INFO, "Opening %s ...", filename);
 
 	fd = open(filename, O_RDONLY);
-	if (fd <= 0) {
+	if (fd < 0) {
 		syslog(LOG_ERR, "Can't open file %s: %s\n",
 						filename, strerror(errno));
 	}
@@ -834,7 +837,9 @@ static void do_send(int sk, int fd, char *peer, bool repeat)
 	}
 
 	/* num of packets = latency (ms) / interval (us) */
-	num = (out->latency * 1000 / out->interval);
+	num = ROUND_CLOSEST(out->latency * 1000, out->interval);
+	if (!num)
+		num = 1;
 
 	syslog(LOG_INFO, "Number of packets: %d", num);
 
@@ -843,8 +848,7 @@ static void do_send(int sk, int fd, char *peer, bool repeat)
 		 * latency:
 		 * jitter buffer = 2 * (SDU * subevents)
 		 */
-		sndbuf = 2 * ((out->latency * 1000 / out->interval) *
-							out->sdu);
+		sndbuf = 2 * (num * out->sdu);
 
 	len = sizeof(sndbuf);
 	if (setsockopt(sk, SOL_SOCKET, SO_SNDBUF, &sndbuf, len) < 0) {
@@ -922,7 +926,7 @@ static void send_mode(char *filename, char *peer, int i, bool repeat)
 		if (!err)
 			fd = open_file(altername);
 
-		if (fd <= 0)
+		if (fd < 0)
 			fd = open_file(filename);
 	}
 
@@ -950,6 +954,8 @@ static void send_mode(char *filename, char *peer, int i, bool repeat)
 			close(sk_arr[i]);
 
 		free(sk_arr);
+		if (fd >= 0)
+			close(fd);
 		return;
 	}
 
@@ -1028,7 +1034,7 @@ static void multy_connect_mode(char *peer)
 	.bcast = { \
 		.big = BT_ISO_QOS_BIG_UNSET, \
 		.bis = BT_ISO_QOS_BIS_UNSET, \
-		.sync_interval = 0x07, \
+		.sync_factor = 0x07, \
 		.packing = 0x00, \
 		.framing = 0x00, \
 		.out = QOS_IO(_interval, _latency, _sdu, _phy, _rtn), \
@@ -1073,22 +1079,35 @@ static struct qos_preset {
 	QOS_PRESET("48_5_1", false, 7500, 15, 117, 0x02, 5),
 	QOS_PRESET("44_6_1", false, 10000, 20, 155, 0x02, 5),
 	/* QoS Configuration settings for high reliability audio data */
-	QOS_PRESET("8_1_2", true, 7500, 45, 26, 0x02, 41),
-	QOS_PRESET("8_2_2", true, 10000, 60, 30, 0x02, 53),
-	QOS_PRESET("16_1_2", true, 7500, 45, 30, 0x02, 41),
-	QOS_PRESET("16_2_2", true, 10000, 60, 40, 0x02, 47),
-	QOS_PRESET("24_1_2", true, 7500, 45, 45, 0x02, 35),
-	QOS_PRESET("24_2_2", true, 10000, 60, 60, 0x02, 41),
-	QOS_PRESET("32_1_2", true, 7500, 45, 60, 0x02, 29),
-	QOS_PRESET("32_2_1", true, 10000, 60, 80, 0x02, 35),
-	QOS_PRESET("44_1_2", false, 8163, 54, 98, 0x02, 23),
-	QOS_PRESET("44_2_2", false, 10884, 71, 130, 0x02, 23),
-	QOS_PRESET("48_1_2", false, 7500, 45, 75, 0x02, 23),
-	QOS_PRESET("48_2_2", false, 10000, 60, 100, 0x02, 23),
-	QOS_PRESET("48_3_2", false, 7500, 45, 90, 0x02, 23),
-	QOS_PRESET("48_4_2", false, 10000, 60, 120, 0x02, 23),
-	QOS_PRESET("48_5_2", false, 7500, 45, 117, 0x02, 23),
-	QOS_PRESET("44_6_2", false, 10000, 60, 155, 0x02, 23),
+	QOS_PRESET("8_1_2", true, 7500, 75, 26, 0x02, 13),
+	QOS_PRESET("8_2_2", true, 10000, 95, 30, 0x02, 13),
+	QOS_PRESET("16_1_2", true, 7500, 75, 30, 0x02, 13),
+	QOS_PRESET("16_2_2", true, 10000, 95, 40, 0x02, 13),
+	QOS_PRESET("24_1_2", true, 7500, 75, 45, 0x02, 13),
+	QOS_PRESET("24_2_2", true, 10000, 95, 60, 0x02, 13),
+	QOS_PRESET("32_1_2", true, 7500, 75, 60, 0x02, 13),
+	QOS_PRESET("32_2_2", true, 10000, 95, 80, 0x02, 13),
+	QOS_PRESET("44_1_2", false, 8163, 80, 97, 0x02, 13),
+	QOS_PRESET("44_2_2", false, 10884, 85, 130, 0x02, 13),
+	QOS_PRESET("48_1_2", false, 7500, 75, 75, 0x02, 13),
+	QOS_PRESET("48_2_2", false, 10000, 95, 100, 0x02, 13),
+	QOS_PRESET("48_3_2", false, 7500, 75, 90, 0x02, 13),
+	QOS_PRESET("48_4_2", false, 10000, 100, 120, 0x02, 13),
+	QOS_PRESET("48_5_2", false, 7500, 75, 117, 0x02, 13),
+	QOS_PRESET("44_6_2", false, 10000, 100, 155, 0x02, 13),
+	/* QoS configuration support setting requirements for the UGG and UGT */
+	QOS_PRESET("16_1_gs", true, 7500, 15, 30, 0x02, 1),
+	QOS_PRESET("16_2_gs", true, 10000, 20, 40, 0x02, 1),
+	QOS_PRESET("32_1_gs", true, 7500, 15, 60, 0x02, 1),
+	QOS_PRESET("32_2_gs", true, 10000, 20, 80, 0x02, 1),
+	QOS_PRESET("48_1_gs", true, 7500, 15, 75, 0x02, 1),
+	QOS_PRESET("48_2_gs", true, 10000, 20, 100, 0x02, 1),
+	QOS_PRESET("32_1_gr", true, 7500, 15, 60, 0x02, 1),
+	QOS_PRESET("32_2_gr", true, 10000, 20, 80, 0x02, 1),
+	QOS_PRESET("48_1_gr", true, 7500, 15, 75, 0x02, 1),
+	QOS_PRESET("48_2_gr", true, 10000, 20, 100, 0x02, 1),
+	QOS_PRESET("48_3_gr", true, 7500, 15, 90, 0x02, 1),
+	QOS_PRESET("48_4_gr", true, 10000, 20, 120, 0x02, 1),
 };
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
@@ -1236,7 +1255,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'b':
-			if (optarg)
+			if (optarg && atoi(optarg) < MAX_DATA_SIZE)
 				data_size = atoi(optarg);
 			break;
 
@@ -1441,9 +1460,18 @@ int main(int argc, char *argv[])
 
 		switch (mode) {
 		case SEND:
-			send_mode(filename, argv[optind + i], i, repeat);
-			if (filename && strchr(filename, ','))
-				filename = strchr(filename, ',') + 1;
+			peer = argv[optind + i];
+			if (bachk(peer) < 0) {
+				fprintf(stderr, "Invalid peer address '%s'\n",
+						peer);
+				exit(1);
+			}
+			send_mode(filename, peer, i, repeat);
+			if (filename && strchr(filename, ',')) {
+				char *tmp = filename;
+				filename = strdup(strchr(filename, ',') + 1);
+				free(tmp);
+			}
 			break;
 
 		case RECONNECT:
@@ -1456,6 +1484,11 @@ int main(int argc, char *argv[])
 
 		case CONNECT:
 			peer = argv[optind + i];
+			if (bachk(peer) < 0) {
+				fprintf(stderr, "Invalid peer address '%s'\n",
+						peer);
+				exit(1);
+			}
 
 			mgmt_set_experimental();
 
@@ -1493,7 +1526,7 @@ int main(int argc, char *argv[])
 
 				free(sk_arr);
 			} else {
-				sk = do_connect(argv[optind + i]);
+				sk = do_connect(peer);
 				if (sk < 0)
 					exit(1);
 
