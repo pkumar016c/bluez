@@ -188,7 +188,9 @@ def main(timeout=0):
     if not adapter:
         print('LEAdvertisingManager1 interface not found')
         return
-
+    mac_address = 'D8:3A:DD:23:C4:D1'
+    # Find the adapter by MAC address
+    adapter = find_adapter_by_mac(bus, mac_address)
     adapter_props = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, adapter),
                                    "org.freedesktop.DBus.Properties")
 
